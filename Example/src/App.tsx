@@ -1,20 +1,3 @@
-import React from 'react';
-import {
-  FlatList,
-  StyleSheet,
-  Text,
-  View,
-  LogBox,
-  Platform,
-  UIManager,
-  ScrollView,
-} from 'react-native';
-import { RectButton } from 'react-native-gesture-handler';
-import {
-  createStackNavigator,
-  StackNavigationProp,
-} from '@react-navigation/stack';
-import { NavigationContainer } from '@react-navigation/native';
 import {
   Carousel,
   CustomLayoutAnimationScreen,
@@ -22,35 +5,56 @@ import {
   Modal,
   ModalNewAPI,
   MountingUnmounting,
+  NativeModals,
   SpringLayoutAnimation,
   SwipeableList,
-  NativeModals,
 } from './LayoutReanimation';
+import {
+  FlatList,
+  LogBox,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  UIManager,
+  View,
+} from 'react-native';
+import {
+  StackNavigationProp,
+  createStackNavigator,
+} from '@react-navigation/stack';
 
+import AnimatedKeyboardExample from './AnimatedKeyboardExample';
+import AnimatedListExample from './LayoutReanimation/AnimatedList';
+import AnimatedSensorExample from './AnimatedSensorExample';
+import AnimatedSharedStyleExample from './AnimatedSharedStyleExample';
 import AnimatedStyleUpdateExample from './AnimatedStyleUpdateExample';
 import AnimatedTabBarExample from './AnimatedTabBarExample';
 import ChatHeadsExample from './ChatHeadsExample';
-import { PagerExample } from './CustomHandler';
 import DragAndSnapExample from './DragAndSnapExample';
 import ExtrapolationExample from './ExtrapolationExample';
+import FrameCallbackExample from './FrameCallbackExample';
 import { KeyframeAnimation } from './LayoutReanimation/KeyframeAnimation';
 import LightboxExample from './LightboxExample';
 import LiquidSwipe from './LiquidSwipe';
 import MeasureExample from './MeasureExample';
+import { NavigationContainer } from '@react-navigation/native';
 import { OlympicAnimation } from './LayoutReanimation/OlympicAnimation';
+import { PagerExample } from './CustomHandler';
+import React from 'react';
 import { ReactionsCounterExample } from './ReactionsCounterExample';
 // @ts-ignore JS file
 import Reanimated1 from '../reanimated1/App';
+import { RectButton } from 'react-native-gesture-handler';
 import ScrollEventExample from './ScrollEventExample';
 import ScrollExample from './AnimatedScrollExample';
 import ScrollToExample from './ScrollToExample';
+import ScrollViewOffsetExample from './ScrollViewOffsetExample';
 import ScrollableViewExample from './ScrollableViewExample';
 import SwipeableListExample from './SwipeableListExample';
-import WobbleExample from './WobbleExample';
-import AnimatedListExample from './LayoutReanimation/AnimatedList';
 import { WaterfallGridExample } from './LayoutReanimation/WaterfallGridExample';
-import AnimatedSensorExample from './AnimatedSensorExample';
-import AnimatedSharedStyleExample from './AnimatedSharedStyleExample';
+import { ColorInterpolationExample } from './ColorInterpolationExample';
+import WobbleExample from './WobbleExample';
 
 LogBox.ignoreLogs(['Calling `getNode()`']);
 
@@ -63,13 +67,25 @@ if (Platform.OS === 'android') {
 type Screens = Record<string, { screen: React.ComponentType; title?: string }>;
 
 const SCREENS: Screens = {
+  ColorInterpolation: {
+    screen: ColorInterpolationExample,
+    title: 'Color interpolation',
+  },
   DefaultAnimations: {
     screen: DefaultAnimations,
     title: '🆕 Default layout animations',
   },
+  AnimatedKeyboard: {
+    screen: AnimatedKeyboardExample,
+    title: '🆕 Use Animated Keyboard',
+  },
   AnimatedSensor: {
     screen: AnimatedSensorExample,
     title: '🆕 Use Animated Sensor',
+  },
+  FrameCallbackExample: {
+    screen: FrameCallbackExample,
+    title: '🆕 Frame callback example',
   },
   DefaultTransistions: {
     screen: WaterfallGridExample,
@@ -150,6 +166,10 @@ const SCREENS: Screens = {
   ScrollEventExample: {
     screen: ScrollEventExample,
     title: 'Scroll Events',
+  },
+  ScrollViewOffsetExample: {
+    screen: ScrollViewOffsetExample,
+    title: 'ScrollView offset',
   },
   ChatHeadsExample: {
     screen: ChatHeadsExample,

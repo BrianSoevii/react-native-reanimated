@@ -109,6 +109,8 @@
   BOOL _tryRunBatchUpdatesSynchronously;
   REAEventHandler _eventHandler;
   volatile void (^_mounting)(void);
+  NSObject *_syncLayoutUpdatesWaitLock;
+  volatile BOOL _syncLayoutUpdatesWaitTimedOut;
   NSMutableDictionary<NSNumber *, ComponentUpdate *> *_componentUpdateBuffer;
   volatile atomic_bool _shouldFlushUpdateBuffer;
   NSMutableDictionary<NSNumber *, UIView *> *_viewRegistry;
@@ -128,6 +130,7 @@
     _operationsInBatch = [NSMutableArray new];
     _componentUpdateBuffer = [NSMutableDictionary new];
     _viewRegistry = [_uiManager valueForKey:@"_viewRegistry"];
+    _syncLayoutUpdatesWaitLock = [NSObject new];
     _shouldFlushUpdateBuffer = false;
   }
 
@@ -232,8 +235,14 @@
 - (BOOL)uiManager:(RCTUIManager *)manager performMountingWithBlock:(RCTUIManagerMountingBlock)block
 {
   RCTAssert(_mounting == nil, @"Mouting block is expected to not be set");
-  _mounting = block;
-  return YES;
+  @synchronized(_syncLayoutUpdatesWaitLock) {
+    if (_syncLayoutUpdatesWaitTimedOut) {
+      return NO;
+    } else {
+      _mounting = block;
+      return YES;
+    }
+  }
 }
 
 - (void)performOperations
@@ -250,6 +259,7 @@
 
     __weak typeof(self) weakSelf = self;
     dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    _syncLayoutUpdatesWaitTimedOut = NO;
     RCTExecuteOnUIManagerQueue(^{
       __typeof__(self) strongSelf = weakSelf;
       if (strongSelf == nil) {
@@ -266,7 +276,7 @@
       }
 
       if (canUpdateSynchronously) {
-        [strongSelf.uiManager runSyncUIUpdatesWithObserver:self];
+        [strongSelf.uiManager runSyncUIUpdatesWithObserver:strongSelf];
         dispatch_semaphore_signal(semaphore);
       }
       // In case canUpdateSynchronously=true we still have to send uiManagerWillPerformMounting event
@@ -274,7 +284,16 @@
       [strongSelf.uiManager setNeedsLayout];
     });
     if (trySynchronously) {
-      dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+      // The 16ms timeout here aims to match the frame duration. It may make sense to read that parameter
+      // from CADisplayLink but it is easier to hardcode it for the time being.
+      // The reason why we use frame duration here is that if takes longer than one frame to complete layout tasks
+      // there is no point of synchronizing layout with the UI interaction as we get that one frame delay anyways.
+      long result = dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 16 * NSEC_PER_MSEC));
+      if (result != 0) {
+        @synchronized(_syncLayoutUpdatesWaitLock) {
+          _syncLayoutUpdatesWaitTimedOut = YES;
+        }
+      }
     }
 
     if (_mounting) {
@@ -509,9 +528,9 @@
   _nativeProps = nativePropsSet;
 }
 
-- (BOOL)isNotNativeViewFullyMounted:(NSNumber *)viewTag
+- (BOOL)isNativeViewMounted:(NSNumber *)viewTag
 {
-  return _viewRegistry[viewTag].superview == nil;
+  return _viewRegistry[viewTag].superview != nil;
 }
 
 - (void)setValueForNodeID:(nonnull NSNumber *)nodeID value:(nonnull NSNumber *)newValue
@@ -529,7 +548,17 @@
            withName:(nonnull NSString *)viewName
 {
   ComponentUpdate *lastSnapshot = _componentUpdateBuffer[viewTag];
-  if ([self isNotNativeViewFullyMounted:viewTag] || lastSnapshot != nil) {
+  BOOL isNativeViewMounted = [self isNativeViewMounted:viewTag];
+
+  if (lastSnapshot != nil) {
+    NSMutableDictionary *lastProps = lastSnapshot.props;
+    for (NSString *key in props) {
+      [lastProps setValue:props[key] forKey:key];
+    }
+  }
+
+  // If the component isn't mounted, we will bail early with a scheduled update
+  if (!isNativeViewMounted) {
     if (lastSnapshot == nil) {
       ComponentUpdate *propsSnapshot = [ComponentUpdate new];
       propsSnapshot.props = [props mutableCopy];
@@ -537,13 +566,26 @@
       propsSnapshot.viewName = viewName;
       _componentUpdateBuffer[viewTag] = propsSnapshot;
       atomic_store(&_shouldFlushUpdateBuffer, true);
-    } else {
-      NSMutableDictionary *lastProps = lastSnapshot.props;
-      for (NSString *key in props) {
-        [lastProps setValue:props[key] forKey:key];
-      }
     }
+
     return;
+  }
+
+  // The component may have been mounted with a pending snapshot (due to a race condition),
+  // so we should attempt run the update. Otherwise, the next call to -maybeFlushUpdateBuffer
+  // will only arrive when a new component is mounted (which might be never!)
+  //
+  // If there are 0 remaining items in the buffer, we can skip the run in -maybeFlushUpdateBuffer.
+  if (lastSnapshot != nil && isNativeViewMounted) {
+    props = lastSnapshot.props;
+    viewTag = lastSnapshot.viewTag;
+    viewName = lastSnapshot.viewName;
+
+    [_componentUpdateBuffer removeObjectForKey:viewTag];
+
+    if (_componentUpdateBuffer.count == 0) {
+      atomic_store(&_shouldFlushUpdateBuffer, false);
+    }
   }
 
   // TODO: refactor PropsNode to also use this function

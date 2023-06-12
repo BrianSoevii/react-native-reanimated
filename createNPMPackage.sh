@@ -6,53 +6,20 @@ ROOT=$(pwd)
 
 unset CI
 
-versions=("0.69.1" "0.68.2" "0.67.3" "0.66.3" "0.65.1")
-version_name=("69" "68" "67" "66" "65")
+versions=("0.71" "0.70" "0.69" "0.68" "0.67")
+version_name=("71" "70" "69" "68" "67")
 
 for index in {0..4}
 do
-  yarn add react-native@"${versions[$index]}"
-  for js_runtime in "hermes" "jsc"
+  yarn add react-native@"${versions[$index]}" --dev
+  for for_hermes in "True" "False"
   do
     echo "js_runtime=${js_runtime}"
 
-    cd android 
-
-    echo "APPLY PATCH"
-    versionNumber=${version_name[$index]}
-    cd ./rnVersionPatch/$versionNumber
-    rm -rf ../backup/*
-    cp -r . ../backup
-    if [ "$(find . | grep 'java')" ];
-    then 
-      fileList=$(find . | grep -i 'java')
-      for file in $fileList; do
-        echo "COPY: $file"
-        cp ../../src/main/java/com/swmansion/reanimated/$file ../backup/$file
-        cp $file ../../src/main/java/com/swmansion/reanimated/$file
-      done
-    else
-    pwd
-      echo "NO PATCH";
-    fi
-    cd ../..
-
+    cd android
     ./gradlew clean
 
-    CLIENT_SIDE_BUILD="False" JS_RUNTIME=${js_runtime} ./gradlew :assembleDebug --no-build-cache --rerun-tasks
-
-    cd ./rnVersionPatch/$versionNumber
-    if [ $(find . | grep 'java') ];
-    then 
-      echo "RESTORE BACKUP"
-      for file in $fileList; do
-        echo "BACKUP: $file"
-        cp ../backup/$file ../../src/main/java/com/swmansion/reanimated/$file
-      done
-      echo "CLEAR BACKUP"
-      rm -rf ../backup/*
-    fi
-    cd ../..
+    CLIENT_SIDE_BUILD="False" JS_RUNTIME=${engine} REANIMATED_PACKAGE_BUILD="1" ./gradlew :assembleDebug --no-build-cache --rerun-tasks
 
     cd $ROOT
 
@@ -61,15 +28,15 @@ do
   done
 done
 
-yarn add react-native@"${versions[0]}" --dev
+git restore yarn.lock package.json
+rm -rf node_modules
+yarn
 
 cp -R android/build build_output
-cd android && ./gradlew clean && cd ..
+cd android && REANIMATED_PACKAGE_BUILD="1" ./gradlew clean && cd ..
 yarn run type:generate
 npm pack
 
 rm -rf ./lib
-rm -rf ./android/rnVersionPatch/backup/*
-touch ./android/rnVersionPatch/backup/.gitkeep
 
 echo "Done!"

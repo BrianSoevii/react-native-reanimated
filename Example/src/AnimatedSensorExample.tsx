@@ -7,10 +7,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { View, Button, StyleSheet } from 'react-native';
 
-export default function AnimatedStyleUpdateExample() {
-  const animatedSensor = useAnimatedSensor(SensorType.ROTATION, {
-    interval: 10,
-  });
+export default function AnimatedSensorExample() {
+  const animatedSensor = useAnimatedSensor(SensorType.ROTATION);
   const style = useAnimatedStyle(() => {
     const pitch = Math.abs(animatedSensor.sensor.value.pitch);
     const roll = Math.abs(animatedSensor.sensor.value.roll);

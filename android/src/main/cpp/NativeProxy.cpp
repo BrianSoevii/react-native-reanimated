@@ -12,7 +12,11 @@
 #elif JS_RUNTIME_V8
 #include <v8runtime/V8RuntimeFactory.h>
 #else
+#if REACT_NATIVE_MINOR_VERSION >= 71
+#include <jsc/JSCRuntime.h>
+#else
 #include <jsi/JSCRuntime.h>
+#endif // REACT_NATIVE_MINOR_VERSION
 #endif
 
 #include <android/log.h>
@@ -21,6 +25,7 @@
 #include "LayoutAnimationsProxy.h"
 #include "NativeProxy.h"
 #include "PlatformDepMethodsHolder.h"
+#include "ReanimatedVersion.h"
 
 namespace reanimated {
 
@@ -40,10 +45,8 @@ NativeProxy::NativeProxy(
       layoutAnimations(std::move(_layoutAnimations)) {}
 
 NativeProxy::~NativeProxy() {
-  runtime_->global().setProperty(
-      *runtime_,
-      jsi::PropNameID::forAscii(*runtime_, "__reanimatedModuleProxy"),
-      jsi::Value::undefined());
+  // removed temporary, new event listener mechanism need fix on the RN side
+  // reactScheduler_->removeEventListener(eventListener_);
 }
 
 jni::local_ref<NativeProxy::jhybriddata> NativeProxy::initHybrid(
@@ -75,11 +78,10 @@ void NativeProxy::installJSIBindings() {
   };
 
   auto getCurrentTime = [this]() {
-    auto method =
-        javaPart_->getClass()->getMethod<local_ref<JString>()>("getUptime");
-    local_ref<JString> output = method(javaPart_.get());
-    return static_cast<double>(
-        std::strtoll(output->toStdString().c_str(), NULL, 10));
+    static const auto method =
+        javaPart_->getClass()->getMethod<jlong()>("getCurrentTime");
+    jlong output = method(javaPart_.get());
+    return static_cast<double>(output);
   };
 
   auto requestRender = [this, getCurrentTime](
@@ -138,6 +140,16 @@ void NativeProxy::installJSIBindings() {
   auto setGestureStateFunction = [this](int handlerTag, int newState) -> void {
     setGestureState(handlerTag, newState);
   };
+
+  auto subscribeForKeyboardEventsFunction =
+      [this](std::function<void(int, int)> keyboardEventDataUpdater) -> int {
+    return subscribeForKeyboardEvents(std::move(keyboardEventDataUpdater));
+  };
+
+  auto unsubscribeFromKeyboardEventsFunction = [this](int listenerId) -> void {
+    unsubscribeFromKeyboardEvents(listenerId);
+  };
+
 #if JS_RUNTIME_HERMES
   auto config =
       ::hermes::vm::RuntimeConfig::Builder().withEnableSampleProfiling(false);
@@ -166,6 +178,9 @@ void NativeProxy::installJSIBindings() {
 
   runtime_->global().setProperty(
       *runtime_, "_WORKLET_RUNTIME", workletRuntimeValue);
+
+  auto version = getReanimatedVersionString(*runtime_);
+  runtime_->global().setProperty(*runtime_, "_REANIMATED_VERSION_CPP", version);
 
   std::shared_ptr<ErrorHandler> errorHandler =
       std::make_shared<AndroidErrorHandler>(scheduler_);
@@ -203,7 +218,10 @@ void NativeProxy::installJSIBindings() {
       registerSensorFunction,
       unregisterSensorFunction,
       setGestureStateFunction,
-      configurePropsFunction};
+      configurePropsFunction,
+      subscribeForKeyboardEventsFunction,
+      unsubscribeFromKeyboardEventsFunction,
+  };
 
   auto module = std::make_shared<NativeReanimatedModule>(
       jsCallInvoker_,
@@ -342,12 +360,29 @@ void NativeProxy::configureProps(
                         ReadableNativeArray::javaobject)>("configureProps");
   method(
       javaPart_.get(),
-      ReadableNativeArray::newObjectCxxArgs(
-          std::move(jsi::dynamicFromValue(rt, uiProps)))
+      ReadableNativeArray::newObjectCxxArgs(jsi::dynamicFromValue(rt, uiProps))
           .get(),
       ReadableNativeArray::newObjectCxxArgs(
-          std::move(jsi::dynamicFromValue(rt, nativeProps)))
+          jsi::dynamicFromValue(rt, nativeProps))
           .get());
+}
+
+int NativeProxy::subscribeForKeyboardEvents(
+    std::function<void(int, int)> keyboardEventDataUpdater) {
+  auto method = javaPart_->getClass()
+                    ->getMethod<int(KeyboardEventDataUpdater::javaobject)>(
+                        "subscribeForKeyboardEvents");
+  return method(
+      javaPart_.get(),
+      KeyboardEventDataUpdater::newObjectCxxArgs(
+          std::move(keyboardEventDataUpdater))
+          .get());
+}
+
+void NativeProxy::unsubscribeFromKeyboardEvents(int listenerId) {
+  auto method = javaPart_->getClass()->getMethod<void(int)>(
+      "unsubscribeFromKeyboardEvents");
+  method(javaPart_.get(), listenerId);
 }
 
 } // namespace reanimated
